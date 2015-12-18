@@ -92,6 +92,7 @@ static int dash_write_header(AVStream *is, OutputStream *os)
     int64_t timescale = av_rescale_q(1, (AVRational){1, 1}, is->time_base);
 
     oformat = av_guess_format("mp4", NULL, NULL);
+    oformat->flags &= ~AVFMT_GLOBALHEADER;
     if (!oformat) {
         ret = AVERROR_MUXER_NOT_FOUND;
         goto fail;
@@ -255,7 +256,6 @@ static int read_frame(AVFormatContext *ifmt_ctx, AVPacket *pkt, int stream_index
   while(1) {
     ret = av_read_frame(ifmt_ctx, pkt);
     if (ret < 0) {
-      av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
       break;
     }
 
@@ -504,7 +504,9 @@ int main(int argc, char **argv)
       if (seekfirst > 0) {
         ret = read_frame(ifmt_ctx, &pkt, video_stream_index);
         if (ret < 0) {
-          av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
+	  if (ret != AVERROR_EOF) {
+	    av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
+	  }
           goto end;
         }
         pkt.stream_index = 0;
@@ -525,7 +527,9 @@ int main(int argc, char **argv)
     while (1) {
       ret = read_frame(ifmt_ctx, &pkt, video_stream_index);
       if (ret < 0) {
-        av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
+	if (ret != AVERROR_EOF) {
+	  av_log(NULL, AV_LOG_ERROR, "Error occurred: %s\n", av_err2str(ret));
+	}
         break;
       }
 
