@@ -1,12 +1,9 @@
 PKG_CONFIG_PATH:=/usr/local/ffmpeg/lib/pkgconfig/
 
 # use pkg-config for getting CFLAGS and LDLIBS
-FFMPEG_LIBS=    libavdevice                        \
+FFMPEG_LIBS=                                       \
                 libavformat                        \
-                libavfilter                        \
                 libavcodec                         \
-                libswresample                      \
-                libswscale                         \
                 libavutil                          \
 
 CFLAGS += -Wall -g -O0
