@@ -23,6 +23,7 @@ FFMPEG_INSTALL_PATH=$WORKSPACE/ffmpeg-install/
     --disable-protocols \
     --enable-protocol=file \
     --enable-demuxer=mov \
+    --enable-muxer=mp4 \
     --prefix=$FFMPEG_INSTALL_PATH \
 
 make
