@@ -4,8 +4,26 @@ cd $WORKSPACE/lib/ffmpeg
 
 FFMPEG_INSTALL_PATH=$WORKSPACE/ffmpeg-install/
 
-# Build with as little code as possible
-./configure --disable-encoders --disable-decoders --disable-hwaccels --disable-bsfs --disable-devices --disable-filters --disable-swresample --disable-swscale --prefix=$FFMPEG_INSTALL_PATH --disable-decoder=h264 --disable-decoder=h263
+# Build with as little as possible
+./configure \
+    --disable-programs \
+    --disable-encoders \
+    --disable-decoders \
+    --disable-hwaccels \
+    --disable-parsers \
+    --disable-demuxers \
+    --disable-muxers \
+    --disable-bsfs \
+    --disable-devices \
+    --disable-filters \
+    --disable-swresample \
+    --disable-swscale \
+    --disable-decoder=h263 \
+    --disable-decoder=h264 \
+    --disable-protocols \
+    --enable-protocol=file \
+    --prefix=$FFMPEG_INSTALL_PATH \
+
 make
 make install
 
