@@ -32,4 +32,6 @@ export PKG_CONFIG_PATH
 
 cd $WORKSPACE/src
 make
+(cd test && bash -xe ./test.sh)
+
 cp dashify $WORKSPACE
