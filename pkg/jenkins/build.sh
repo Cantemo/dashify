@@ -22,6 +22,7 @@ FFMPEG_INSTALL_PATH=$WORKSPACE/ffmpeg-install/
     --disable-decoder=h264 \
     --disable-protocols \
     --enable-protocol=file \
+    --enable-demuxer=mov \
     --prefix=$FFMPEG_INSTALL_PATH \
 
 make
