@@ -1,4 +1,31 @@
 /*
+ * Parts of this file comes from libavformat/dashenc.c in the ffmpeg
+ * source. Those portions are covered by the following license
+ *
+ * MPEG-DASH ISO BMFF segmenter
+ * Copyright (c) 2014 Martin Storsjo
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/*
+ * Parts of this file comes from doc/examples/remuxing.c in the ffmpeg
+ * source. Those portions are covered by the following license
+ *
  * Copyright (c) 2013 Stefano Sabatini
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -30,6 +57,9 @@
 
 #include <libavutil/timestamp.h>
 #include <libavformat/avformat.h>
+#include <libavutil/avstring.h>
+#include <libavutil/avconfig.h>
+#include <libavutil/intreadwrite.h>
 #include <getopt.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -45,6 +75,13 @@ extern int optreset;
 
 static int min_seg_duration;
 
+
+typedef struct AVCodecTag {
+  enum AVCodecID id;
+  unsigned int tag;
+} AVCodecTag;
+
+extern const AVCodecTag ff_mp4_obj_type[];
 
 typedef struct OutputStream {
   AVFormatContext *ctx;
@@ -66,6 +103,72 @@ typedef struct OutputStream {
 } OutputStream;
 
 /* From libavformat/dashenc.c in ffmpeg */
+
+// RFC 6381
+static void set_codec_str(AVFormatContext *s, AVCodecContext *codec,
+                          char *str, int size)
+{
+    const AVCodecTag *tags[2] = { NULL, NULL };
+    uint32_t tag;
+    if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
+        tags[0] = avformat_get_mov_video_tags();
+    else if (codec->codec_type == AVMEDIA_TYPE_AUDIO)
+        tags[0] = avformat_get_mov_audio_tags();
+    else
+        return;
+
+    tag = av_codec_get_tag(tags, codec->codec_id);
+    if (!tag)
+        return;
+    if (size < 5)
+        return;
+
+    AV_WL32(str, tag);
+    str[4] = '\0';
+    if (!strcmp(str, "mp4a") || !strcmp(str, "mp4v")) {
+        uint32_t oti;
+        tags[0] = ff_mp4_obj_type;
+        oti = av_codec_get_tag(tags, codec->codec_id);
+        if (oti)
+            av_strlcatf(str, size, ".%02x", oti);
+        else
+            return;
+
+        if (tag == MKTAG('m', 'p', '4', 'a')) {
+            if (codec->extradata_size >= 2) {
+                int aot = codec->extradata[0] >> 3;
+                if (aot == 31)
+                    aot = ((AV_RB16(codec->extradata) >> 5) & 0x3f) + 32;
+                av_strlcatf(str, size, ".%d", aot);
+            }
+        } else if (tag == MKTAG('m', 'p', '4', 'v')) {
+            // Unimplemented, should output ProfileLevelIndication as a decimal number
+            av_log(s, AV_LOG_WARNING, "Incomplete RFC 6381 codec string for mp4v\n");
+        }
+    } else if (!strcmp(str, "avc1")) {
+        uint8_t *tmpbuf = NULL;
+        uint8_t *extradata = codec->extradata;
+        int extradata_size = codec->extradata_size;
+        if (!extradata_size)
+            return;
+        if (extradata[0] != 1) {
+            AVIOContext *pb;
+            if (avio_open_dyn_buf(&pb) < 0)
+                return;
+            if (ff_isom_write_avcc(pb, extradata, extradata_size) < 0) {
+                ffio_free_dyn_buf(&pb);
+                return;
+            }
+            extradata_size = avio_close_dyn_buf(pb, &extradata);
+            tmpbuf = extradata;
+        }
+
+        if (extradata_size >= 4)
+            av_strlcatf(str, size, ".%02x%02x%02x",
+                        extradata[1], extradata[2], extradata[3]);
+        av_free(tmpbuf);
+    }
+}
 
 static int d_write(void *opaque, uint8_t *buf, int buf_size)
 {
@@ -315,6 +418,7 @@ int main(int argc, char **argv)
     int64_t first_pts = -1;
     static int write_header = 0;
     static int verbose = 0;
+    static int print_codec = 0;
     char *stream_identifier = "v:0";
     enum AVMediaType stream_type = AVMEDIA_TYPE_UNKNOWN;
     int stream_number = 0;
@@ -336,6 +440,7 @@ int main(int argc, char **argv)
 	  {"duration",     required_argument,       0, 'd'},
 	  {"segment",      required_argument,       0, 's'},
           {"stream",       required_argument,       0, 't'},
+          {"codec",        no_argument,       &print_codec, 1},
 	  {"init",         no_argument,       &write_header, 1},
 	  {"verbose",      no_argument,       &verbose, 1},
 	  {0, 0, 0, 0}
@@ -397,7 +502,7 @@ int main(int argc, char **argv)
     }
 
     if (argc - optind != 2) {
-      fprintf(stderr, "usage: %s [--stream streamid] [--duration duration] [--segment number] [--init] input output\n"
+      fprintf(stderr, "usage: %s [--stream streamid] [--duration duration] [--segment number] [--init] [--codec] input output\n"
               "\n"
               "This application extracts a single segment from a single channel suitable for playing in a DASH stream\n"
               "\n"
@@ -405,6 +510,7 @@ int main(int argc, char **argv)
               "  --duration\t\t\tThe requested duration of the segment, in milliseconds\n"
               "  --segment number\t\tThe segment number. Will seek to the requested segment\n"
               "  --init\t\t\tExtract the init segment with the moov header\n"
+              "  --codec\t\t\tPrint the codec string for the requested stream instead of the data\n"
               "\n", argv[0]);
       return 1;
     }
@@ -421,7 +527,7 @@ int main(int argc, char **argv)
         stream_number = atoi(ptr+1);
       }
     }
-    
+
     in_filename  = argv[optind];
     out_filename = argv[optind+1];
 
@@ -429,12 +535,6 @@ int main(int argc, char **argv)
     if (stat(out_filename, &st) != -1) {
       fprintf(stderr, "File already exists: %s\n", out_filename);
       exit(1);
-    }
-
-    if (strcmp(out_filename, "-") == 0) {
-      out_file = stdout;
-    } else {
-      out_file = fopen(out_filename, "w+");
     }
 
     avcodec_register_all();
@@ -467,8 +567,6 @@ int main(int argc, char **argv)
     AVStream *in_stream = ifmt_ctx->streams[video_stream_index];
     OutputStream *out_stream = av_mallocz(sizeof(OutputStream));
 
-
-
     i = video_stream_index;
 
     seekfirst_ms = (segment-1) * duration_ms;
@@ -482,6 +580,18 @@ int main(int argc, char **argv)
     av_log(NULL, AV_LOG_DEBUG, "duration = %" PRId64 "\n", duration);
     av_log(NULL, AV_LOG_DEBUG, "duration_ms = %" PRId64 "\n", duration_ms);
 
+    if (strcmp(out_filename, "-") == 0) {
+      out_file = stdout;
+    } else {
+      out_file = fopen(out_filename, "w+");
+    }
+
+    if (print_codec)  {
+      char codec[64];
+      set_codec_str(ifmt_ctx, in_stream->codec, codec, sizeof(codec));
+      fprintf(out_file, "%s", codec);
+      return 0;
+    }
     if (write_header) {
       out_stream->out = out_file;
     } else {
