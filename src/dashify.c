@@ -415,6 +415,8 @@ int main(int argc, char **argv)
     int64_t seekfirst;
     int64_t duration_ms = 1000;
     int64_t duration;
+    int64_t seg_end_ms = 0;
+    int64_t seg_end;
     int64_t first_pts = -1;
     static int write_header = 0;
     static int verbose = 0;
@@ -570,13 +572,17 @@ int main(int argc, char **argv)
     i = video_stream_index;
 
     seekfirst_ms = (segment-1) * duration_ms;
-
+    seg_end_ms = segment * duration_ms;
     seekfirst = av_rescale_q(seekfirst_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
+    seg_end = av_rescale_q(seg_end_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
     min_seg_duration = duration = av_rescale_q(duration_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
-
+    
+    
     av_log(NULL, AV_LOG_DEBUG, "timebase = %d:%d\n", ifmt_ctx->streams[video_stream_index]->time_base.num, ifmt_ctx->streams[video_stream_index]->time_base.den);
     av_log(NULL, AV_LOG_DEBUG, "seekfirst = %" PRId64 "\n", seekfirst);
     av_log(NULL, AV_LOG_DEBUG, "seekfirst_ms = %" PRId64 "\n", seekfirst_ms);
+    av_log(NULL, AV_LOG_DEBUG, "seg_end = %" PRId64 "\n", seg_end);
+    av_log(NULL, AV_LOG_DEBUG, "seg_end_ms = %" PRId64 "\n", seg_end_ms);
     av_log(NULL, AV_LOG_DEBUG, "duration = %" PRId64 "\n", duration);
     av_log(NULL, AV_LOG_DEBUG, "duration_ms = %" PRId64 "\n", duration_ms);
 
@@ -627,7 +633,6 @@ int main(int argc, char **argv)
 
     out_stream->out = out_file;
 
-    // TODO: This should seek to the first keyframe after seekfirst
     if (seekfirst)
       ret = avformat_seek_file(ifmt_ctx, video_stream_index, seekfirst, seekfirst, INT64_MAX, 0);
 
@@ -655,8 +660,8 @@ int main(int argc, char **argv)
       if ((((in_stream->codec->codec_type == AVMEDIA_TYPE_VIDEO) &&
            pkt.flags & AV_PKT_FLAG_KEY) ||
            in_stream->codec->codec_type == AVMEDIA_TYPE_AUDIO) &&
-          av_compare_ts(pkt.pts - first_pts, in_stream->time_base,
-                        duration, in_stream->time_base) >= 0) {
+          av_compare_ts(pkt.pts, in_stream->time_base,
+                        seg_end, in_stream->time_base) >= 0) {
 
         break;
       }
