@@ -73,9 +73,6 @@ extern int optopt;
 extern int opterr;
 extern int optreset;
 
-static int min_seg_duration;
-
-
 typedef struct AVCodecTag {
   enum AVCodecID id;
   unsigned int tag;
@@ -286,15 +283,6 @@ static int dash_flush(AVFormatContext *s, OutputStream * os, int segment_index)
 
 static int dash_write_packet(AVFormatContext *s, AVPacket *pkt, OutputStream * os)
 {
-    // DASHContext *c = s->priv_data;
-    AVStream *st = s->streams[pkt->stream_index];
-    int64_t seg_end_duration = (os->segment_index) * (int64_t) min_seg_duration;
-
-    /*
-    ret = update_stream_extradata(s, os, st->codec);
-    if (ret < 0)
-        return ret;
-    */
     // Fill in a heuristic guess of the packet duration, if none is available.
     // The mp4 muxer will do something similar (for the last packet in a fragment)
     // if nothing is set (setting it for the other packets doesn't hurt).
@@ -315,24 +303,6 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt, OutputStream * o
 
     if (os->first_pts == AV_NOPTS_VALUE)
         os->first_pts = pkt->pts;
-
-    if (pkt->flags & AV_PKT_FLAG_KEY && os->packets_written &&
-        av_compare_ts(pkt->pts - os->first_pts, st->time_base,
-                      seg_end_duration, AV_TIME_BASE_Q) >= 0) {
-
-      /*
-        c->last_duration = av_rescale_q(pkt->pts - os->start_pts,
-                                        st->time_base,
-                                        AV_TIME_BASE_Q);
-        c->total_duration = av_rescale_q(pkt->pts - os->first_pts,
-                                         st->time_base,
-                                         AV_TIME_BASE_Q);
-      */
-      /*
-      if ((ret = dash_flush(s, 0, pkt->stream_index)) < 0)
-            return ret;
-      */
-    }
 
     if (!os->packets_written) {
         // If we wrote a previous segment, adjust the start time of the segment
@@ -431,17 +401,12 @@ int main(int argc, char **argv)
 
       static struct option long_options[] =
 	{
-	  /* These options set a flag. */
-	  /*
-	  {"verbose", no_argument,       &verbose_flag, 1},
-	  {"brief",   no_argument,       &verbose_flag, 0},
-
-	  */
 	  /* These options don’t set a flag.
 	     We distinguish them by their indices. */
 	  {"duration",     required_argument,       0, 'd'},
 	  {"segment",      required_argument,       0, 's'},
           {"stream",       required_argument,       0, 't'},
+	  /* These options set a flag. */
           {"codec",        no_argument,       &print_codec, 1},
 	  {"init",         no_argument,       &write_header, 1},
 	  {"verbose",      no_argument,       &verbose, 1},
@@ -557,14 +522,11 @@ int main(int argc, char **argv)
 
     ret = find_stream(ifmt_ctx, stream_identifier);
 
-    //    ret = av_find_best_stream(ifmt_ctx, stream_type, stream_number, -1, &dec, 0);
     if (ret < 0) {
       av_log(NULL, AV_LOG_ERROR, "Cannot find a stream with specifier %s in the input file\n", stream_identifier);
       goto end;
     }
     video_stream_index = ret;
-
-
 
     AVStream *in_stream = ifmt_ctx->streams[video_stream_index];
     OutputStream *out_stream = av_mallocz(sizeof(OutputStream));
@@ -575,7 +537,7 @@ int main(int argc, char **argv)
     seg_end_ms = segment * duration_ms;
     seekfirst = av_rescale_q(seekfirst_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
     seg_end = av_rescale_q(seg_end_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
-    min_seg_duration = duration = av_rescale_q(duration_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
+    duration = av_rescale_q(duration_ms*AV_TIME_BASE/1000, AV_TIME_BASE_Q, ifmt_ctx->streams[video_stream_index]->time_base);
     
     
     av_log(NULL, AV_LOG_DEBUG, "timebase = %d:%d\n", ifmt_ctx->streams[video_stream_index]->time_base.num, ifmt_ctx->streams[video_stream_index]->time_base.den);
@@ -666,16 +628,12 @@ int main(int argc, char **argv)
         break;
       }
 
-      //	in_stream  = ifmt_ctx->streams[pkt.stream_index];
-      //        out_stream = ofmt_ctx->streams[0];
-
       log_packet(ifmt_ctx, &pkt, "in");
 
       pkt.stream_index = 0;
 
       log_packet(out_stream->ctx, &pkt, "out");
       ret = dash_write_packet(out_stream->ctx, &pkt, out_stream);
-        //        ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
       if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Error muxing packet\n");
         break;
@@ -686,7 +644,6 @@ int main(int argc, char **argv)
 
     dash_flush(out_stream->ctx, out_stream, segment);
 
-    //    av_write_trailer(ofmt_ctx);
 end:
 
     avformat_close_input(&ifmt_ctx);
