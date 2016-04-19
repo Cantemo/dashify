@@ -241,7 +241,7 @@ static int dash_write_header(AVStream *is, OutputStream *os)
 
     snprintf(ctx->filename, sizeof(ctx->filename), "%s%s", "./", os->initfile);
 
-    av_dict_set(&opts, "movflags", "dash+frag_custom+frag_discont", 0);
+    av_dict_set(&opts, "movflags", "dash+frag_custom+frag_discont+global_sidx", 0);
     av_dict_set_int(&opts, "fragment_index", os->fragment_index, 0);
     av_dict_set_int(&opts, "video_track_timescale", timescale, 0);
     if ((ret = avformat_write_header(ctx, &opts)) < 0) {
@@ -272,7 +272,7 @@ static int dash_flush(AVFormatContext *s, OutputStream * os, int segment_index)
 {
     int ret = 0;
 
-    write_styp(os->ctx->pb);
+    //    write_styp(os->ctx->pb);
 
     av_write_frame(os->ctx, NULL);
     avio_flush(os->ctx->pb);
