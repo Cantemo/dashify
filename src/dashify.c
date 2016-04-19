@@ -395,7 +395,7 @@ int main(int argc, char **argv)
     enum AVMediaType stream_type = AVMEDIA_TYPE_UNKNOWN;
     int stream_number = 0;
     struct stat st;
-
+    avformat_network_init();
     avcodec_register_all();
     int c;
 
